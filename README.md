@@ -1,8 +1,16 @@
 # AWS RetailOps Governed Data Pipeline
 
+An event-driven AWS data-quality pipeline...
+# AWS RetailOps Governed Data Pipeline
+
 An event-driven AWS data-quality pipeline that validates synthetic retail
 transactions, separates accepted and quarantined records, exposes governed
 Athena analytics, and alerts operators when processing fails.
+# AWS RetailOps Governed Data Pipeline
+
+[![CI](https://github.com/eswarkumar-code/aws-retailops-governed-data-pipeline/actions/workflows/ci.yml/badge.svg)](https://github.com/eswarkumar-code/aws-retailops-governed-data-pipeline/actions/workflows/ci.yml)
+
+An event-driven AWS data-quality pipeline...
 
 ## What this demonstrates
 
