@@ -1,0 +1,104 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Governed, event-driven retail transaction validation pipeline.
+
+Parameters:
+  AlertEmail:
+    Type: String
+    Description: Email address that confirms the SNS alarm subscription.
+
+Resources:
+  DataBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+
+  ValidatorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/
+      Handler: lambda_function.lambda_handler
+      Runtime: python3.14
+      Architectures: [arm64]
+      MemorySize: 128
+      Timeout: 30
+      Policies:
+        - Statement:
+            - Sid: ListRawTransactions
+              Effect: Allow
+              Action: s3:ListBucket
+              Resource: !GetAtt DataBucket.Arn
+              Condition:
+                StringLike:
+                  s3:prefix: [raw/*]
+            - Sid: ReadRawTransactions
+              Effect: Allow
+              Action: s3:GetObject
+              Resource: !Sub ${DataBucket.Arn}/raw/*
+            - Sid: WriteGovernedTransactions
+              Effect: Allow
+              Action: s3:PutObject
+              Resource:
+                - !Sub ${DataBucket.Arn}/processed/*
+                - !Sub ${DataBucket.Arn}/quarantine/*
+      Events:
+        RawUpload:
+          Type: S3
+          Properties:
+            Bucket: !Ref DataBucket
+            Events: s3:ObjectCreated:*
+            Filter:
+              S3Key:
+                Rules:
+                  - Name: prefix
+                    Value: raw/
+                  - Name: suffix
+                    Value: .jsonl
+
+  ValidatorLogGroup:
+    Type: AWS::Logs::LogGroup
+    DependsOn: ValidatorFunction
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${ValidatorFunction}
+      RetentionInDays: 14
+
+  ErrorTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      Subscription:
+        - Protocol: email
+          Endpoint: !Ref AlertEmail
+
+  ValidatorErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Alerts when the validator records a Lambda error.
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref ValidatorFunction
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      DatapointsToAlarm: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref ErrorTopic]
+
+Outputs:
+  BucketName:
+    Value: !Ref DataBucket
+  FunctionName:
+    Value: !Ref ValidatorFunction
